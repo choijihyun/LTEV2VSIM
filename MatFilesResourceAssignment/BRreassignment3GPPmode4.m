@@ -1,4 +1,4 @@
-function [BRid, Nreassign, NreassignNoBorder, Nunlocked, NunlockedNoBorder, sensingMatrix, knownUsedMatrix, resReselectionCounter] = BRreassignment3GPPmode4(IDvehicle,BRid,sensingMatrix,knownUsedMatrix,resReselectionCounter,neighborsID,errorSCImatrix,simParams,timeNextPacket,RXpower,IBEmatrix,Nbeacons,NbeaconsF,NbeaconsT,indexNoBorder,Ksi,PtxERP_RB,PnRB,appParams, Xvehicle, Yvehicle)
+function [BRid, Nreassign, NreassignNoBorder, Nunlocked, NunlockedNoBorder, sensingMatrix, knownUsedMatrix, resReselectionCounter] = BRreassignment3GPPmode4(IDvehicle,BRid,sensingMatrix,knownUsedMatrix,resReselectionCounter,neighborsID,errorSCImatrix,simParams,timeNextPacket,RXpower,IBEmatrix,Nbeacons,NbeaconsF,NbeaconsT,indexNoBorder,Ksi,PtxERP_RB,PnRB,appParams, distance)
 % Sensing-based autonomous resource reselection algorithm (3GPP MODE 4)
 % as from 3GPP TS 36.321 and TS 36.213
 % Resources are allocated for a Resource Reselection Period (SPS)
@@ -141,9 +141,10 @@ end % else all vehicles with the counter reaching zero perform the reselection
 % Update the number of vehicles which perform reselection
 Nscheduled = length(scheduledID);
 
-%jihyun - it is already determine at outer function, so it no needs to
-%calcu at each for loops
-distance = sqrt((Xvehicle - Xvehicle').^2+(Yvehicle - Yvehicle').^2);
+%jihyun - for saving bestBR and sensingMatrix to calcu and get info
+bestBRList = zeros(Nscheduled,MBest);
+sensingMatrixPermList = zeros(Nscheduled,Nbeacons);
+
 
 %% Perform the reselection
 for iV = 1:Nscheduled
@@ -195,79 +196,10 @@ for iV = 1:Nscheduled
 
     % Keep the best M canditates
     bestBR = bestBR(1:MBest);
-
-    % jihyun check the 20% of the selected resource
-    % scheduledID에 이미 자원선택할 애들 모앗으니까, 이 안에서 거리 계산해서 그 안에 있는 애들이랑 비교해서 해보기!
-    % 일단은 얼마정도 떨어진 차 한대 만 가지고 두 대 비교해보기!
-    if iV == Nscheduled
-        % jihyun- for 20% resource log
-        fileID = fopen("resource_200.csv",'a'); 
-        % jihyun- for selection window(SW) log
-        fileForSWID = fopen("resource_200_SW.csv",'a');
-        
-        flag=0;
-        % Call function to compute distances
-        % Distance matrix has dimensions equal to IDvehicle x IDvehicle in order to
-        % speed up the computation (only vehicles present at the considered instant)
-        % distance(i,j): distance from vehicle with index i to vehicle with index j
-        for j = 1:Nscheduled
-            if j== iV
-                continue
-            end
-            
-            % 거리를 비교해야되는데 그 그 함수가 이거가 아닌 듯. 함수찾아보기
-            % Xvehicle = simValues.Xvehicle
-            if 200 <= distance(iV, j) && distance(iV, j) <= 210
-                % j에 해당하는 자원 봐보기
-                % Select the sensing matrix only for the vehicles that perform reallocation
-                sensingMatrixScheduled_ = sum(sensingMatrix(:,:,scheduledID(j)),1)/length(sensingMatrix(:,1,1));
-                rpMatrix_ = randperm(Nbeacons);
-                sensingMatrixPerm_ = sensingMatrixScheduled_(rpMatrix_);
-                
-                powerThreshold_ = simParams.powerThresholdMode4 * (12*appParams.RBsBeacon);
-                
-                while powerThreshold_ < 100
-                    usableBRs_ = (sensingMatrixPerm_<powerThreshold_) | (knownUsedMatrixPerm<1);
-                    if sum( usableBRs_ ) < MBest
-                        powerThreshold_ = powerThreshold_ * 2;
-                    else
-                        break;
-                    end
-                end        
     
-                sensingMatrixPerm_ = sensingMatrixPerm_ + (1-usableBRs_) * max(PtxERP_RB);
-                [~, bestBRPerm_] = sort(sensingMatrixPerm_);
-                bestBR_ = rpMatrix(bestBRPerm_);
-                bestBR_ = bestBR_(1:MBest);
-                
-                
-                % 우선 본인 출력 
-                fprintf(fileID, '%d,',bestBR)
-                fprintf(fileID, '\n');
-                
-                fprintf(fileID, '%d,',bestBR_);
-                fprintf(fileID, '\n');
-                flag=1;
-                
-                fprintf(fileForSWID, '%d,', sensingMatrixPerm);
-                fprintf(fileForSWID, '\n');
-                
-
-                fprintf(fileForSWID, '%d,', sensingMatrixPerm_);
-                fprintf(fileForSWID, '\n')
-   
-            end
-            
-        end
-        if flag
-            fprintf(fileID, '\n');
-            fprintf(fileForSWID, '\n');
-        end
-            
-        fclose(fileID);
-        fclose(fileForSWID);
-    end
-
+    bestBRList(iV,:) = bestBR;
+    sensingMatrixPermList(iV,:) = sensingMatrixPerm;
+  
     % Reassign
     BRindex = randi(MBest);
     BR = bestBR(BRindex);
@@ -278,6 +210,27 @@ for iV = 1:Nscheduled
         NreassignNoBorder = NreassignNoBorder + 1;
     end
 end
+
+%여기서 거리 비교해서 위에서 뽑아진 selection window를 비교해야하하는거 아닐까
+% bestBR(1x20)이랑 sensingMatrixPerm(1x100 전체 자원에 대한 측정 값)을 저장해서 봐야할 듯
+% jihyun- for 20% resource log
+% iV와 비교해서 거리에 존재하는거 출력
+for iV = 1:Nscheduled-1
+    if 30 <= distance(iV, Nscheduled) && distance(iV, Nscheduled) <= 35
+        fileID = fopen("resource_30.csv",'a'); 
+        % jihyun- for selection window(SW) log
+        fileForSWID = fopen("resource_30_SW.csv",'a');
+        fprintf(fileID, '%d,',bestBRList(Nscheduled,:))
+        fprintf(fileID, '\n');   
+        fprintf(fileID, '%d,',bestBRList(iV,:))
+        fprintf(fileID, '\n\n');     
+        fprintf(fileForSWID, '%d,', sensingMatrixPermList(Nscheduled,:));
+        fprintf(fileForSWID, '\n');
+        fprintf(fileForSWID, '%d,', sensingMatrixPermList(iV,:));
+        fprintf(fileForSWID, '\n\n');
+    end
+end
+ 
 
 % Reduce the knownUsedMatrix by 1 (not a probloem if it goes below 0
 knownUsedMatrix = knownUsedMatrix -1;
